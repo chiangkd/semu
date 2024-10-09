@@ -8,9 +8,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <glib.h>
+#include <libslirp.h>
+
 #include "device.h"
 #include "riscv.h"
 #include "riscv_private.h"
+#include "slirp.h"
 
 #define PRIV(x) ((emu_state_t *) x->priv)
 
@@ -582,6 +586,17 @@ static int semu_start(int argc, char **argv)
     emu.disk = virtio_blk_init(&(emu.vblk), disk_file);
 #endif
 
+    /* Slirp */
+    Slirp *slirp = NULL;
+    int32_t tapfd = 0;  // temp
+    struct slirp_data opaque = {
+        .tapfd = tapfd,
+    };
+
+    slirp = create_slirp((void *) &opaque);
+    GArray *pollfds = g_array_new(FALSE, FALSE, sizeof(GPollFD));
+
+
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
     while (!emu.stopped) {
@@ -604,6 +619,19 @@ static int semu_start(int argc, char **argv)
                     emu_update_vblk_interrupts(&vm);
 #endif
             }
+
+            int32_t pollout;
+            GPollFD *pollfds_data;
+            uint32_t timeout = -1;
+
+            slirp_pollfds_fill(slirp, &timeout, net_slirp_add_poll, pollfds);
+            pollfds_data = (GPollFD *) pollfds->data;
+
+            do {
+                pollout = g_poll(pollfds_data, pollfds->len, timeout);
+            } while (pollout < 0 && errno == EINTR);
+            slirp_pollfds_poll(slirp, (pollout <= 0), net_slirp_get_revents,
+                               pollfds);
 
             emu_update_timer_interrupt(vm.hart[i]);
 

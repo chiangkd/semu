@@ -52,17 +52,18 @@ OBJS := \
 	uart.o \
 	main.o \
 	clint.o \
+	semu-slirp.o \
 	$(OBJS_EXTRA)
 
 deps := $(OBJS:%.o=.%.o.d)
 
 $(BIN): $(OBJS)
 	$(VECHO) "  LD\t$@\n"
-	$(Q)$(CC) -o $@ $^ $(LDFLAGS)
+	$(Q)$(CC) -I/usr/include/slirp -I/usr/include/glib-2.0 -o $@ $^ $(LDFLAGS) -lslirp -lglib-2.0 
 
 %.o: %.c
 	$(VECHO) "  CC\t$@\n"
-	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF .$@.d $<
+	$(Q)$(CC) -I/usr/include/slirp -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -lslirp -lglib-2.0 -o $@ $(CFLAGS) -c -MMD -MF .$@.d $<
 
 DTC ?= dtc
 
