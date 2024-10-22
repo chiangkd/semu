@@ -101,7 +101,7 @@ typedef struct {
     uint32_t Status;
     uint32_t InterruptStatus;
     /* supplied by environment */
-    int tap_fd;
+    int32_t tap_fd;
     uint32_t *ram;
     /* implementation-specific */
     void *priv;

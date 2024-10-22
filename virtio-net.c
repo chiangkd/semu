@@ -224,14 +224,15 @@ void virtio_net_refresh_queue(virtio_net_state_t *vnet)
         return;
 
     struct pollfd pfd = {vnet->tap_fd, POLLIN | POLLOUT, 0};
-    poll(&pfd, 1, 0);
     if (pfd.revents & POLLIN) {
         vnet->queues[VNET_QUEUE_RX].fd_ready = true;
         virtio_net_try_rx(vnet);
+        fprintf(stderr, "[rx]:vnet pfd.revents = 0x%x\n", pfd.revents);
     }
     if (pfd.revents & POLLOUT) {
         vnet->queues[VNET_QUEUE_TX].fd_ready = true;
         virtio_net_try_tx(vnet);
+        fprintf(stderr, "[tx]:vnet pfd.revents = 0x%x\n", pfd.revents);
     }
 }
 
@@ -448,6 +449,9 @@ bool virtio_net_init(virtio_net_state_t *vnet)
     if (vnet->tap_fd < 0) {
         fprintf(stderr, "failed to open TAP device: %s\n", strerror(errno));
         return false;
+    }
+    else {
+        fprintf(stderr, "open TAP device: %x\n", vnet->tap_fd);
     }
 
     /* Specify persistent tap device */

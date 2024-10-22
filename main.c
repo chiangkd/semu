@@ -6,11 +6,15 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+#include <sched.h>
 
 #include "device.h"
 #include "riscv.h"
 #include "riscv_private.h"
+#include "slirp.h"
 
 #define PRIV(x) ((emu_state_t *) x->priv)
 
@@ -440,6 +444,7 @@ static void handle_options(int argc,
                            char **dtb_file,
                            char **initrd_file,
                            char **disk_file,
+                           char **net_device,
                            int *hart_count)
 {
     *kernel_file = *dtb_file = *initrd_file = *disk_file = NULL;
@@ -448,7 +453,8 @@ static void handle_options(int argc,
     struct option opts[] = {
         {"kernel", 1, NULL, 'k'}, {"dtb", 1, NULL, 'b'},
         {"initrd", 1, NULL, 'i'}, {"disk", 1, NULL, 'd'},
-        {"smp", 1, NULL, 'c'},    {"help", 0, NULL, 'h'},
+        {"net", 1, NULL, 'n'}, {"smp", 1, NULL, 'c'},
+        {"help", 0, NULL, 'h'}, 
     };
 
     int c;
@@ -465,6 +471,9 @@ static void handle_options(int argc,
             break;
         case 'd':
             *disk_file = optarg;
+            break;
+        case 'n':
+            *net_device = optarg;
             break;
         case 'c':
             *hart_count = atoi(optarg);
@@ -509,9 +518,14 @@ static int semu_start(int argc, char **argv)
     char *dtb_file;
     char *initrd_file;
     char *disk_file;
+    char *net_dev = "tap";
     int hart_count = 1;
     handle_options(argc, argv, &kernel_file, &dtb_file, &initrd_file,
-                   &disk_file, &hart_count);
+                   &disk_file, &net_dev, &hart_count);
+
+    if(unshare(CLONE_NEWUSER | CLONE_NEWNET) == -1) {
+        perror("unshare");
+    }
 
     /* Initialize the emulator */
     emu_state_t emu;
@@ -582,6 +596,20 @@ static int semu_start(int argc, char **argv)
     emu.disk = virtio_blk_init(&(emu.vblk), disk_file);
 #endif
 
+    // if(net_dev == "user") {
+    /* Slirp */
+
+
+    SlirpConfig slirp_cfg;
+    slirp_cfg_init(&slirp_cfg);
+
+
+    struct slirp_data *slirp = NULL;
+    slirp = create_slirp(&slirp_cfg, emu.vnet.tap_fd);
+    if (slirp == NULL) {
+        fprintf(stderr, "create_slirp failed\n");
+    }
+
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
     while (!emu.stopped) {
@@ -598,7 +626,7 @@ static int semu_start(int argc, char **argv)
                 if (emu.vnet.InterruptStatus)
                     emu_update_vnet_interrupts(&vm);
 #endif
-
+        
 #if SEMU_HAS(VIRTIOBLK)
                 if (emu.vblk.InterruptStatus)
                     emu_update_vblk_interrupts(&vm);

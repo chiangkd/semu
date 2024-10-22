@@ -1,7 +1,7 @@
 include mk/common.mk
 
 CC ?= gcc
-CFLAGS := -O2 -g -Wall -Wextra
+CFLAGS := -O2 -g -Wall -Wextra -D_GNU_SOURCE
 CFLAGS += -include common.h
 
 # clock frequency
@@ -52,17 +52,18 @@ OBJS := \
 	uart.o \
 	main.o \
 	clint.o \
+	semu-slirp.o \
 	$(OBJS_EXTRA)
 
 deps := $(OBJS:%.o=.%.o.d)
 
 $(BIN): $(OBJS)
 	$(VECHO) "  LD\t$@\n"
-	$(Q)$(CC) -o $@ $^ $(LDFLAGS)
+	$(Q)$(CC) -o $@ $^ $(LDFLAGS) -lslirp
 
 %.o: %.c
 	$(VECHO) "  CC\t$@\n"
-	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF .$@.d $<
+	$(Q)$(CC) -I/usr/include/slirp -lslirp -o $@ $(CFLAGS) -c -MMD -MF .$@.d $<
 
 DTC ?= dtc
 
