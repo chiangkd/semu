@@ -62,11 +62,11 @@ static void virtio_net_update_status(virtio_net_state_t *vnet, uint32_t status)
         return;
 
     /* Reset */
-    int tap_fd = vnet->tap_fd;
+    netdev_t peer = vnet->peer;
     uint32_t *ram = vnet->ram;
     void *priv = vnet->priv;
     memset(vnet, 0, sizeof(*vnet));
-    vnet->tap_fd = tap_fd, vnet->ram = ram;
+    vnet->peer = peer, vnet->ram = ram;
     vnet->priv = priv;
 }
 
@@ -111,6 +111,64 @@ static bool vnet_iovec_read(struct iovec **vecs,
         (*nvecs)--;
     }
     return n && !*nvecs;
+}
+
+static ssize_t handle_read(netdev_t *netdev,
+                           virtio_net_queue_t *queue,
+                           struct iovec *iovs_cursor,
+                           size_t niovs)
+{
+    ssize_t plen = 0;
+    switch (netdev->type) {
+    case NET_CLIENT_DRIVER_TAP:
+        plen = readv(netdev->op.tap.tap_fd, iovs_cursor, niovs);
+        if (plen < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+            queue->fd_ready = false;
+            return -1;
+        }
+        if (plen < 0) {
+            plen = 0;
+            fprintf(stderr, "[VNET] could not read packet: %s\n",
+                    strerror(errno));
+        }
+        break;
+    case NET_CLIENT_DRIVER_USER:
+        /* TODO: handle read  */
+        break;
+    default:
+        break;
+    }
+
+    return plen;
+}
+
+static ssize_t handle_write(netdev_t *netdev,
+                            virtio_net_queue_t *queue,
+                            struct iovec *iovs_cursor,
+                            size_t niovs)
+{
+    ssize_t plen = 0;
+    switch (netdev->type) {
+    case NET_CLIENT_DRIVER_TAP:
+        plen = writev(netdev->op.tap.tap_fd, iovs_cursor, niovs);
+        if (plen < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+            queue->fd_ready = false;
+            return -1;
+        }
+        if (plen < 0) {
+            plen = 0;
+            fprintf(stderr, "[VNET] could not write packet: %s\n",
+                    strerror(errno));
+        }
+        break;
+    case NET_CLIENT_DRIVER_USER:
+        /* TODO: handle slirp_input */
+        break;
+    default:
+        break;
+    }
+
+    return plen;
 }
 
 /* Require existing 'desc_idx' to use as iteration variable, and input
@@ -186,18 +244,10 @@ static bool vnet_iovec_read(struct iovec **vecs,
                                 virtio_header, sizeof(virtio_header));         \
             }                                                                  \
                                                                                \
-            ssize_t plen =                                                     \
-                VERB##v(vnet->tap_fd, buffer_iovs_cursor, buffer_niovs);       \
-            if (plen < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {       \
-                queue->fd_ready = false;                                       \
+            ssize_t plen = handle_##VERB(&vnet->peer, queue,                   \
+                                         buffer_iovs_cursor, buffer_niovs);    \
+            if (plen < 0)                                                      \
                 break;                                                         \
-            }                                                                  \
-            if (plen < 0) {                                                    \
-                plen = 0;                                                      \
-                fprintf(stderr, "[VNET] could not " #VERB " packet: %s\n",     \
-                        strerror(errno));                                      \
-            }                                                                  \
-                                                                               \
             /* consume from available queue, write to used queue */            \
             queue->last_avail++;                                               \
             ram[queue->QueueUsed + 1 + (new_used % queue->QueueNum) * 2] =     \
@@ -223,15 +273,25 @@ void virtio_net_refresh_queue(virtio_net_state_t *vnet)
         (vnet->Status & VIRTIO_STATUS__DEVICE_NEEDS_RESET))
         return;
 
-    struct pollfd pfd = {vnet->tap_fd, POLLIN | POLLOUT, 0};
-    poll(&pfd, 1, 0);
-    if (pfd.revents & POLLIN) {
-        vnet->queues[VNET_QUEUE_RX].fd_ready = true;
-        virtio_net_try_rx(vnet);
-    }
-    if (pfd.revents & POLLOUT) {
-        vnet->queues[VNET_QUEUE_TX].fd_ready = true;
-        virtio_net_try_tx(vnet);
+    net_client_driver_t client_type = vnet->peer.type;
+    switch (client_type) {
+    case NET_CLIENT_DRIVER_TAP:
+        struct pollfd pfd = {vnet->peer.op.tap.tap_fd, POLLIN | POLLOUT, 0};
+        poll(&pfd, 1, 0);
+        if (pfd.revents & POLLIN) {
+            vnet->queues[VNET_QUEUE_RX].fd_ready = true;
+            virtio_net_try_rx(vnet);
+        }
+        if (pfd.revents & POLLOUT) {
+            vnet->queues[VNET_QUEUE_TX].fd_ready = true;
+            virtio_net_try_tx(vnet);
+        }
+        break;
+    case NET_CLIENT_DRIVER_USER:
+        /* TODO: handle slirp input/output */
+        break;
+    default:
+        break;
     }
 }
 
@@ -433,7 +493,7 @@ void virtio_net_write(hart_t *vm,
     }
 }
 
-bool virtio_net_init(virtio_net_state_t *vnet)
+bool virtio_net_init(virtio_net_state_t *vnet, const char *client)
 {
     if (vnet_dev_cnt >= VNET_DEV_CNT_MAX) {
         fprintf(stderr,
@@ -444,23 +504,10 @@ bool virtio_net_init(virtio_net_state_t *vnet)
     /* Allocate memory for the private member */
     vnet->priv = &vnet_configs[vnet_dev_cnt++];
 
-    vnet->tap_fd = open("/dev/net/tun", O_RDWR);
-    if (vnet->tap_fd < 0) {
-        fprintf(stderr, "failed to open TAP device: %s\n", strerror(errno));
+    if (!net_client_init(&vnet->peer, client)) {
+        fprintf(stderr, "Fail to init client device %s\n", client);
         return false;
     }
-
-    /* Specify persistent tap device */
-    struct ifreq ifreq = {.ifr_flags = IFF_TAP | IFF_NO_PI};
-    strncpy(ifreq.ifr_name, TAP_INTERFACE, sizeof(ifreq.ifr_name));
-    if (ioctl(vnet->tap_fd, TUNSETIFF, &ifreq) < 0) {
-        fprintf(stderr, "failed to allocate TAP device: %s\n", strerror(errno));
-        return false;
-    }
-
-    fprintf(stderr, "allocated TAP interface: %s\n", ifreq.ifr_name);
-    assert(fcntl(vnet->tap_fd, F_SETFL,
-                 fcntl(vnet->tap_fd, F_GETFL, 0) | O_NONBLOCK) >= 0);
 
     return true;
 }

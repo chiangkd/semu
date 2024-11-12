@@ -39,6 +39,7 @@ endif
 $(call set-feature, VIRTIONET)
 ifeq ($(call has, VIRTIONET), 1)
     OBJS_EXTRA += virtio-net.o
+    OBJS_EXTRA += net_client.o
 endif
 
 BIN = semu
