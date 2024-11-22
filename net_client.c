@@ -66,7 +66,7 @@ static int net_init_slirp(netdev_t *netdev)
     return 0;
 }
 
-int net_client_init(netdev_t *netdev, const char *net_type)
+int netdev_init(netdev_t *netdev, const char *net_type)
 {
     int dev_idx = find_net_dev_idx(net_type, client_driver_lookup);
     if (dev_idx == -1)

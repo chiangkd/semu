@@ -24,4 +24,4 @@ typedef struct {
     } op;
 } netdev_t;
 
-int net_client_init(netdev_t *nedtev, const char *net_type);
+int netdev_init(netdev_t *nedtev, const char *net_type);

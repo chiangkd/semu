@@ -493,7 +493,7 @@ void virtio_net_write(hart_t *vm,
     }
 }
 
-bool virtio_net_init(virtio_net_state_t *vnet, const char *client)
+bool virtio_net_init(virtio_net_state_t *vnet, const char *net_dev_name)
 {
     if (vnet_dev_cnt >= VNET_DEV_CNT_MAX) {
         fprintf(stderr,
@@ -504,8 +504,8 @@ bool virtio_net_init(virtio_net_state_t *vnet, const char *client)
     /* Allocate memory for the private member */
     vnet->priv = &vnet_configs[vnet_dev_cnt++];
 
-    if (!net_client_init(&vnet->peer, client)) {
-        fprintf(stderr, "Fail to init client device %s\n", client);
+    if (!netdev_init(&vnet->peer, net_dev_name)) {
+        fprintf(stderr, "Fail to init network device %s\n", net_dev_name);
         return false;
     }
 
