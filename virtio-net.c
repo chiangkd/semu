@@ -137,6 +137,13 @@ static ssize_t handle_read(netdev_t *netdev,
     }
     case _(user):
         /* TODO: handle read  */
+        net_user_options_t *slirp = (net_user_options_t *) netdev->op;
+        
+        plen = readv(slirp->slirp_fd, iovs_cursor, niovs);
+
+
+        
+
         break;
     default:
         break;
@@ -297,7 +304,17 @@ void virtio_net_refresh_queue(virtio_net_state_t *vnet)
         break;
     }
     case _(user):
-        /* TODO: handle slirp input/output */
+        net_user_options_t *slirp = (net_user_options_t *) vnet->peer.op;
+        struct pollfd pfd = {slirp->slirp_fd, POLLIN | POLLOUT, 0};
+        poll(&pfd, 1, 0);
+        if (pfd.revents & POLLIN) {
+            vnet->queues[VNET_QUEUE_RX].fd_ready = true;
+            virtio_net_try_rx(vnet);
+        }
+        if (pfd.revents & POLLOUT) {
+            vnet->queues[VNET_QUEUE_TX].fd_ready = true;
+            virtio_net_try_tx(vnet);
+        }
         break;
     default:
         break;

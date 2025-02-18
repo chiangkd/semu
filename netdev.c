@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 
 #include "netdev.h"
+#include <arpa/inet.h>
 
 static int net_init_tap();
 static int net_init_user();
@@ -55,9 +56,23 @@ static int net_init_tap(netdev_t *netdev)
     return 0;
 }
 
+
 static int net_init_user(netdev_t *netdev UNUSED)
 {
+    net_user_options_t *slirp_cfg = (net_user_options_t *) netdev->op;
     /* TODO: create slirp dev */
+    inet_aton("10.0.2.0", &slirp_cfg->vnetwork);
+    inet_aton("255.255.255.0", &slirp_cfg->vnetmask);
+    inet_aton("10.0.2.2", &slirp_cfg->vhost);
+    inet_aton("10.0.2.3", &slirp_cfg->vnameserver);
+
+    net_slirp_init(slirp_cfg);
+
+    
+
+
+
+    // use another thread to handle the reception 
     return 0;
 }
 

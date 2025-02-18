@@ -18,8 +18,22 @@ typedef struct {
     int tap_fd;
 } net_tap_options_t;
 
+/* Slirp part*/
+#include "slirp.h"
+
+
+
+
 typedef struct {
     /* TODO: Implement user option */
+    int slirp_fd;
+    int timers;
+    struct in_addr vnetwork;            // 10.0.2.0
+    struct in_addr vnetmask;            // 255.255.255.0
+    struct in_addr vhost;               // 10.0.2.2
+    struct in_addr vdhcp_start;         // 10.0.2.15
+    struct in_addr vnameserver;         // 10.0.2.3
+    struct in_addr recommended_vguest;  // 10.0.2.100
 } net_user_options_t;
 
 typedef struct {
